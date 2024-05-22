@@ -1,0 +1,547 @@
+---
+title: "Capstone Analysis - FED NY"
+author: "Jason Chandra"
+date: "2024-05-08"
+output:
+  pdf_document:
+    toc: true       # Enable Table of Contents
+    toc_depth: 3    # Depth of sections to include in the TOC
+    number_sections: true # Numbers the sections in the document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height=3.5, fig.width=7) # Default size for plots
+```
+
+### Prelim Business context
+- https://www.thestreet.com/personal-finance/airline-complaints-28-2010-12788173
+
+- That leaves but one category where airlines got worse last year: Consumer complaints to the DOT jumped from 7,120 in 2009 to 9,119 last year. Breaking down the complaints finds that more than half of that increase came in the “flight problems” category, which concerns all complaints due to cancellations and delays. Wichita State University marketing professor Dean Headley, who co-authored the report, pointed to high demand as cause for this dissatisfaction with flight performance.
+
+- “As the system adjusts to higher demand for air travel, more things are not going to go as planned for travelers,” said Headley in a press release. “When you look at the past 10 years, you find that the airline industry performs most efficiently when the system isn't stressed by high passenger volume.”
+
+### Business Problem
+
+- Identify trends and factors contributing to baggage complaints across United Airlines, American Eagle, and Hawaiian Airlines from 2004 to 2010 to reduce operational costs and improve customer loyalty. 
+
+- This will help the airlines to better allocate resources, improve baggage handling processes, and ultimately enhance the overall customer experience, thereby potentially increasing profitability through heightened customer retention and reduced compensation expenses.
+
+1. Dependent Variable: Baggage Complaints
+
+2. Independent Variables: Scheduled flights, cancelled flights, and enplaned passengers.
+Predictive Question: Can you predict the number of baggage complaints based on the number of flights scheduled, flights cancelled, and the number of passengers?
+
+### The Data We have
+
+The data set contains monthly observations from 2004 to 2010 for United Airlines, American Eagle, and Hawaiian Airlines. The variables in the data set include:
+
+- Baggage - The total number of passenger complaints for theft of baggage contents, or for lost, damaged, or misrouted luggage for the airline that month
+- Scheduled - The total number of flights scheduled by that airline that month
+- Cancelled - The total number of flights cancelled by that airline that month
+- Enplaned - The total number of passengers who boarded a plane with the airline that month
+
+
+### Loading Data
+```{r, echo=TRUE, results='markup', message=FALSE, warning=FALSE}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(readr)
+
+# Load the dataset
+data <- read_csv("baggagecomplaints.csv")
+
+# Display the structure of the dataset
+str(data)
+
+# Show summary statistics
+summary(data)
+
+# Assume the date is in the format "mm/yyyy"
+data$Date <- as.Date(paste("01", data$Date), format="%d%m/%Y")
+
+# Ensure data is sorted by Date
+data <- arrange(data, Date)
+
+# Debug: Check the range of dates to ensure all data is considered
+print(min(data$Date))
+print(max(data$Date))
+
+```
+
+
+### Performing initial diagnostic - initial plot, ACF, PACF, ADF test.
+```{r, echo=TRUE, results='markup', message=FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(forecast)
+library(tseries)
+library(lubridate)
+
+# Generate separate time series for each airline
+airlines <- unique(data$Airline)
+airline_ts_list <- list()
+
+for(airline in airlines) {
+  airline_data <- data %>% filter(Airline == airline)
+  
+  # Create time series for each variable
+  airline_ts <- list(
+    Baggage = ts(airline_data$Baggage, start = c(year(min(airline_data$Date)), month(min(airline_data$Date))), frequency = 12),
+    Scheduled = ts(airline_data$Scheduled, start = c(year(min(airline_data$Date)), month(min(airline_data$Date))), frequency = 12),
+    Cancelled = ts(airline_data$Cancelled, start = c(year(min(airline_data$Date)), month(min(airline_data$Date))), frequency = 12),
+    Enplaned = ts(airline_data$Enplaned, start = c(year(min(airline_data$Date)), month(min(airline_data$Date))), frequency = 12)
+  )
+  
+  airline_ts_list[[airline]] <- airline_ts
+}
+
+# Function to perform diagnostics
+perform_diagnostics <- function(ts_data, title, airline) {
+  print(ggplot(data = as.data.frame(ts_data), aes(x = seq_along(ts_data), y = ts_data)) +
+          geom_line() + labs(title = paste(title, "for", airline), x = "Time", y = "Value") +
+          theme_minimal())
+  
+  # Check for stationarity
+  adf_test <- adf.test(ts_data, alternative = "stationary")
+  print(adf_test)
+  
+  # Autocorrelation Function (ACF)
+  Acf(ts_data, main = paste("ACF of", title, "for", airline))
+  
+  # Partial Autocorrelation Function (PACF)
+  Pacf(ts_data, main = paste("PACF of", title, "for", airline))
+}
+
+```
+
+
+### Basically 12 different iterations we have to run. Let's try for American Eagle.
+
+```{r, echo=TRUE, results='markup', message=FALSE, warning=FALSE}
+# American Eagle
+perform_diagnostics(airline_ts_list[["American Eagle"]][["Baggage"]], "Baggage", "American Eagle")
+perform_diagnostics(airline_ts_list[["American Eagle"]][["Scheduled"]], "Scheduled", "American Eagle")
+perform_diagnostics(airline_ts_list[["American Eagle"]][["Cancelled"]], "Cancelled", "American Eagle")
+perform_diagnostics(airline_ts_list[["American Eagle"]][["Enplaned"]], "Enplaned", "American Eagle")
+```
+Both qualtitatively and quantitatively, all 4 of the American Eagle ones are non stationary.
+
+1. Baggage Complaints
+Dickey-Fuller = -1.7166, p-value = 0.6921
+The p-value is much greater than 0.05, suggesting that you fail to reject the null hypothesis. Thus, the series is likely non-stationary. This implies that the number of baggage complaints has trends or seasonality that vary over time.
+
+2. Scheduled Flights
+Dickey-Fuller = -2.4149, p-value = 0.4057
+Similarly, the p-value here is also greater than 0.05, indicating non-stationarity. The number of scheduled flights likely includes some trends or cyclic patterns that do not remain constant over time.
+
+3. Cancelled Flights
+Dickey-Fuller = -3.0312, p-value = 0.1529
+The p-value is again above the conventional threshold of 0.05, suggesting non-stationarity. There are probably trends or structural changes in the data concerning flight cancellations.
+
+4. Enplaned Passengers
+Dickey-Fuller = -3.2891, p-value = 0.079
+Although this p-value is closer to 0.05, it still suggests that the series is non-stationary. The number of enplaned passengers might have trends, or the variance might change over time
+
+
+### Code to find the optimal 'T'?
+
+```{r, echo=TRUE, results='markup', message=FALSE, warning=FALSE}
+
+library(readr)
+library(dplyr)
+library(forecast)
+library(xts)
+library(TSA)
+
+# Filter data for a specific airline, e.g., "American Eagle", and a specific variable, e.g., "Enplaned"
+ae_data <- filter(data, Airline == "American Eagle")
+
+# Create an xts object for the "Enplaned" time series
+enplaned_xts <- xts(ae_data$Enplaned, order.by = ae_data$Date)
+
+# Plot the xts object
+plot(enplaned_xts, major.format = "%Y-%m", main = "Enplaned Passengers Time Series")
+
+# Calculate and plot the periodogram
+p <- periodogram(enplaned_xts)
+plot(p, main = "Periodogram of Enplaned Passengers")
+
+# Determine the maximum frequency and calculate the seasonality
+max_freq <- p$freq[which.max(p$spec)]
+seasonality <- 1/max_freq
+
+# Optional: White noise comparison
+wn <- rnorm(length(enplaned_xts))
+wn_periodogram <- periodogram(wn)
+plot(wn_periodogram, main = "Periodogram of White Noise")
+        
+```
+
+We see a big peak in the 0.083333 -> which translates to a period of 12.
+
+#### Nice. Now that we are confident in a period of 12. Still want to test these.
+
+Recap: 
+1. Dependent Variable: Baggage Complaints
+
+2. Independent Variables: Scheduled flights, cancelled flights, and enplaned passengers.
+Predictive Question: Can you predict the number of baggage complaints based on the number of flights scheduled, flights cancelled, and the number of passengers?
+
+####################################
+
+
+
+### STL Decomposition
+- One limitation of the basic STL decomposition is that it doesn't inherently support the inclusion of external regressors or covariates directly in the decomposition process.
+
+So, let's try to model STL decomposition of the baggage complaints.
+
+```{r, echo=TRUE, results='markup', message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message=FALSE)
+library(forecast)
+library(readxl)
+#install.packages("MuMIn")
+library(MuMIn)
+#install.packages("Metrics")
+library(knitr)
+library(ggplot2)
+#install.packages("fracdiff")
+library(fracdiff)
+library(lmtest)
+library(urca)
+#install.packages("fitdistrplus")
+
+data <- read.csv('baggagecomplaints.csv')
+data$bag_rate <- data$Baggage / data$Enplaned
+data$cancel_rate <- data$Cancelled / data$Scheduled
+data$Date <- as.Date(paste(data$Year, data$Month, "01", sep = "-"))
+
+airlines <- unique(data$Airline)
+airline_data_frames <- list()
+for (airline in airlines) {
+  airline_data_frames[[airline]] <- subset(data, Airline == airline)
+}
+
+ae <- airline_data_frames[['American Eagle']]
+haw <- airline_data_frames[['Hawaiian']]
+uni <- airline_data_frames[['United']]
+```
+
+```{r, echo=TRUE, results='markup', message=FALSE, warning=FALSE}
+## American Eagle
+ae <- ae[, c("Date", "Baggage")]
+
+library(xts)
+# Create xts object
+ae_xts <- xts(ae$Baggage, order.by = ae$Date)
+
+# Convert xts to ts
+start_year <- year(min(ae$Date))
+start_month <- month(min(ae$Date))
+ae_ts <- ts(ae$Baggage, start = c(start_year, start_month), frequency = 12)
+
+# Split the data based on the year 2010
+split_year <- 2010
+train_end <- c(split_year - 1, 12)  # Up to December of the previous year
+test_start <- c(split_year, 1)      # Starting from January of the split year
+
+ae_train <- window(ae_ts, end = train_end)
+ae_test <- window(ae_ts, start = test_start)
+
+# Checking the results
+print("Training Data:")
+print(head(ae_train))
+print("Testing Data:")
+print(head(ae_test))
+
+```
+
+### STL Decomposition for AE
+```{r}
+library(forecast)
+library(Metrics)
+
+# Perform STL decomposition on training data
+ae_stl <- stl(ae_train, s.window = "periodic")
+
+# Plot the decomposition
+autoplot(ae_stl) +
+  ggtitle("STL Decomposition of American Eagle Baggage Complaints") +
+  xlab("Year") +
+  ylab("Baggage Complaints")
+
+# Fit the STL model with seasonal adjustment
+ae_stl_fit <- stlm(ae_train, s.window = "periodic")
+
+# Forecast the next periods (length of test set)
+forecast_horizon <- length(ae_test)
+ae_forecast <- forecast(ae_stl_fit, h = forecast_horizon)
+
+# Plot the forecast
+autoplot(ae_forecast) +
+  autolayer(ae_test, series = "Actual", PI = FALSE) +
+  ggtitle("STL Forecast vs Actual") +
+  xlab("Year") +
+  ylab("Baggage Complaints")
+
+# Calculate evaluation metrics
+ae_mae <- mae(ae_test, ae_forecast$mean)
+ae_rmse <- rmse(ae_test, ae_forecast$mean)
+ae_mape <- mean(abs((ae_test - ae_forecast$mean) / ae_test)) * 100
+
+# Print the evaluation metrics
+print(paste("Mean Absolute Error (MAE):", ae_mae))
+print(paste("Root Mean Squared Error (RMSE):", ae_rmse))
+print(paste("Mean Absolute Percentage Error (MAPE):", ae_mape))
+```
+### Fine tunining - STL -> we can do several of these:
+
+- Adjusting Seasonal Window: The s.window parameter can be set to different values (like "periodic", "7", "10") to adjust the smoothness of the seasonal component.
+
+- Robust STL: Use robust = TRUE in the stl function to make the decomposition robust to outliers.
+
+Gridsearch implementation.
+
+```{r}
+# Select data for each airline
+ae <- airline_data_frames[['American Eagle']]
+haw <- airline_data_frames[['Hawaiian']]
+uni <- airline_data_frames[['United']]
+
+# Function to perform grid search
+perform_grid_search <- function(airline_data, airline_name) {
+  airline_data <- airline_data[, c("Date", "Baggage")]
+  
+  # Create xts object
+  airline_xts <- xts(airline_data$Baggage, order.by = airline_data$Date)
+  
+  # Convert xts to ts
+  start_year <- year(min(airline_data$Date))
+  start_month <- month(min(airline_data$Date))
+  airline_ts <- ts(airline_data$Baggage, start = c(start_year, start_month), frequency = 12)
+  
+  # Split the data based on the year 2010
+  split_year <- 2010
+  train_end <- c(split_year - 1, 12)  # Up to December of the previous year
+  test_start <- c(split_year, 1)      # Starting from January of the split year
+  
+  airline_train <- window(airline_ts, end = train_end)
+  airline_test <- window(airline_ts, start = test_start)
+  
+  # Checking the results
+  print(paste("Training Data for", airline_name))
+  print(head(airline_train))
+  print(paste("Testing Data for", airline_name))
+  print(head(airline_test))
+  
+  # Define grid search parameters
+  s_windows <- c("periodic", 12)
+  robust_options <- c(TRUE, FALSE)
+  best_rmse <- Inf
+  best_model <- NULL
+  best_forecast <- NULL
+  
+  # Perform grid search
+  for (s_window in s_windows) {
+    for (robust in robust_options) {
+      try({
+        # Perform STL decomposition on training data
+        airline_stl <- stl(airline_train, s.window = s_window, robust = robust)
+        
+        # Fit the STL model with seasonal adjustment
+        stl_fit <- stlm(airline_train, s.window = s_window, robust = robust)
+        
+        # Forecast the next periods (length of test set)
+        forecast_horizon <- length(airline_test)
+        airline_forecast <- forecast(stl_fit, h = forecast_horizon)
+        
+        # Calculate RMSE
+        rmse_value <- rmse(airline_test, airline_forecast$mean)
+        
+        # Update best model if current RMSE is lower
+        if (rmse_value < best_rmse) {
+          best_rmse <- rmse_value
+          best_model <- list(s_window = s_window, robust = robust, airline_stl = airline_stl, stl_fit = stl_fit)
+          best_forecast <- airline_forecast
+        }
+      }, silent = FALSE)
+    }
+  }
+  
+  # Check if a best model was found
+  if (is.null(best_model)) {
+    stop(paste("No valid model configuration found for", airline_name))
+  }
+  
+  # Print the best model configuration and RMSE
+  print(paste("Best s.window for", airline_name, ":", best_model$s_window))
+  print(paste("Robust for", airline_name, ":", best_model$robust))
+  print(paste("Best RMSE for", airline_name, ":", best_rmse))
+  
+  # Plot the best forecast
+  autoplot(best_forecast) +
+    autolayer(airline_test, series = "Actual", PI = FALSE) +
+    ggtitle(paste("Best STL Forecast (s.window =", best_model$s_window, ", robust =", best_model$robust, ") vs Actual for", airline_name)) +
+    xlab("Year") +
+    ylab("Baggage Complaints")
+  
+  # Plot the best decomposition
+  autoplot(best_model$airline_stl) +
+    ggtitle(paste("Best STL Decomposition (s.window =", best_model$s_window, ", robust =", best_model$robust, ") of", airline_name, "Baggage Complaints")) +
+    xlab("Year") +
+    ylab("Baggage Complaints")
+  
+  # Calculate evaluation metrics for the best model
+  best_mae <- mae(airline_test, best_forecast$mean)
+  best_mape <- mean(abs((airline_test - best_forecast$mean) / airline_test)) * 100
+  
+  # Print the evaluation metrics for the best model
+  print(paste("Best Mean Absolute Error (MAE) for", airline_name, ":", best_mae))
+  print(paste("Best Mean Absolute Percentage Error (MAPE) for", airline_name, ":", best_mape))
+}
+
+# Perform grid search for each airline
+perform_grid_search(ae, "American Eagle")
+perform_grid_search(haw, "Hawaiian")
+perform_grid_search(uni, "United")
+
+```
+
+### Holt Winters Decomposition
+
+
+```{r}
+# Baseline Holt-Winters model
+hw_baseline <- HoltWinters(ae_train)
+hw_forecast <- forecast(hw_baseline, h = length(ae_test))
+
+# Plot the forecast
+autoplot(hw_forecast) +
+  autolayer(ae_test, series = "Actual", PI = FALSE) +
+  ggtitle("Baseline Holt-Winters Forecast vs Actual for American Eagle") +
+  xlab("Year") +
+  ylab("Baggage Complaints")
+
+# Calculate evaluation metrics
+hw_mae <- mae(ae_test, hw_forecast$mean)
+hw_rmse <- rmse(ae_test, hw_forecast$mean)
+hw_mape <- mean(abs((ae_test - hw_forecast$mean) / ae_test)) * 100
+
+# Print the evaluation metrics
+print(paste("Baseline Mean Absolute Error (MAE):", hw_mae))
+print(paste("Baseline Root Mean Squared Error (RMSE):", hw_rmse))
+print(paste("Baseline Mean Absolute Percentage Error (MAPE):", hw_mape))
+```
+
+Parameters to Fine-Tune in Holt-Winters
+The Holt-Winters method has several parameters that can be fine-tuned:
+
+Alpha (α): Smoothing parameter for the level.
+Beta (β): Smoothing parameter for the trend.
+Gamma (γ): Smoothing parameter for the seasonal component.
+Seasonal Type: Additive (additive) or multiplicative (multiplicative).
+
+
+```{r}
+# Function to perform grid search for Holt-Winters model
+perform_hw_grid_search <- function(airline_data, airline_name) {
+  airline_data <- airline_data[, c("Date", "Baggage")]
+  
+  # Create xts object
+  airline_xts <- xts(airline_data$Baggage, order.by = airline_data$Date)
+  
+  # Convert xts to ts
+  start_year <- year(min(airline_data$Date))
+  start_month <- month(min(airline_data$Date))
+  airline_ts <- ts(airline_data$Baggage, start = c(start_year, start_month), frequency = 12)
+  
+  # Split the data based on the year 2010
+  split_year <- 2010
+  train_end <- c(split_year - 1, 12)  # Up to December of the previous year
+  test_start <- c(split_year, 1)      # Starting from January of the split year
+  
+  airline_train <- window(airline_ts, end = train_end)
+  airline_test <- window(airline_ts, start = test_start)
+  
+  # Checking the results
+  print(paste("Training Data for", airline_name))
+  print(head(airline_train))
+  print(paste("Testing Data for", airline_name))
+  print(head(airline_test))
+  
+  # Define grid search parameters
+  alpha_values <- seq(0.1, 0.9, by = 0.1)
+  beta_values <- seq(0.1, 0.9, by = 0.1)
+  gamma_values <- seq(0.1, 0.9, by = 0.1)
+  seasonal_types <- c("additive", "multiplicative")
+  best_rmse <- Inf
+  best_model <- NULL
+  best_forecast <- NULL
+  
+  # Perform grid search
+  for (alpha in alpha_values) {
+    for (beta in beta_values) {
+      for (gamma in gamma_values) {
+        for (seasonal in seasonal_types) {
+          try({
+            # Fit the Holt-Winters model with specified parameters
+            hw_model <- HoltWinters(airline_train, alpha = alpha, beta = beta, gamma = gamma, seasonal = seasonal)
+            hw_forecast <- forecast(hw_model, h = length(airline_test))
+            
+            # Calculate RMSE
+            rmse_value <- rmse(airline_test, hw_forecast$mean)
+            
+            # Update best model if current RMSE is lower
+            if (rmse_value < best_rmse) {
+              best_rmse <- rmse_value
+              best_model <- list(alpha = alpha, beta = beta, gamma = gamma, seasonal = seasonal, hw_model = hw_model)
+              best_forecast <- hw_forecast
+            }
+          }, silent = TRUE)
+        }
+      }
+    }
+  }
+  
+  # Check if a best model was found
+  if (is.null(best_model)) {
+    stop(paste("No valid model configuration found for", airline_name))
+  }
+  
+  # Print the best model configuration and RMSE
+  print(paste("Best alpha for", airline_name, ":", best_model$alpha))
+  print(paste("Best beta for", airline_name, ":", best_model$beta))
+  print(paste("Best gamma for", airline_name, ":", best_model$gamma))
+  print(paste("Best seasonal type for", airline_name, ":", best_model$seasonal))
+  print(paste("Best RMSE for", airline_name, ":", best_rmse))
+  
+  # Plot the best forecast
+  autoplot(best_forecast) +
+    autolayer(airline_test, series = "Actual", PI = FALSE) +
+    ggtitle(paste("Best Holt-Winters Forecast vs Actual for", airline_name)) +
+    xlab("Year") +
+    ylab("Baggage Complaints")
+  
+  # Calculate evaluation metrics for the best model
+  best_mae <- mae(airline_test, best_forecast$mean)
+  best_mape <- mean(abs((airline_test - best_forecast$mean) / airline_test)) * 100
+  
+  # Print the evaluation metrics for the best model
+  print(paste("Best Mean Absolute Error (MAE) for", airline_name, ":", best_mae))
+  print(paste("Best Mean Absolute Percentage Error (MAPE) for", airline_name, ":", best_mape))
+}
+
+# Perform grid search for each airline
+perform_hw_grid_search(ae, "American Eagle")
+perform_hw_grid_search(haw, "Hawaiian")
+perform_hw_grid_search(uni, "United")
+```
+
+
+### Prophet/Orbit?
+
+
+
+

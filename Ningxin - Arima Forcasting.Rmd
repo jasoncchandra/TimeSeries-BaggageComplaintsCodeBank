@@ -1,0 +1,599 @@
+---
+title: "Arima Forcasting"
+author: "Ningxin Kong"
+date: "2024-05-18"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message=FALSE)
+library(forecast)
+library(readxl)
+#install.packages("MuMIn")
+library(MuMIn)
+#install.packages("Metrics")
+library(knitr)
+library(ggplot2)
+#install.packages("fracdiff")
+library(fracdiff)
+library(lmtest)
+library(urca)
+#install.packages("fitdistrplus")
+```
+
+# Data Importing
+```{r}
+data <- read.csv('baggagecomplaints.csv')
+data$bag_rate <- data$Baggage / data$Enplaned
+data$cancel_rate <- data$Cancelled / data$Scheduled
+data$Date <- as.Date(paste(data$Year, data$Month, "01", sep = "-"))
+```
+
+```{r}
+airlines <- unique(data$Airline)
+airline_data_frames <- list()
+for (airline in airlines) {
+  airline_data_frames[[airline]] <- subset(data, Airline == airline)
+}
+```
+
+```{r}
+ae <- airline_data_frames[['American Eagle']]
+haw <- airline_data_frames[['Hawaiian']]
+uni <- airline_data_frames[['United']]
+```
+
+
+## American Eagle
+```{r}
+ae <- ae[, c("Date", "Baggage")]
+
+library(xts)
+ae_ts <- xts(ae$Baggage, order.by = ae$Date)
+
+# Check the time series object
+print(ae_ts)
+```
+
+### Train Test Split
+```{r}
+# Split the data based on the year 2010
+ae_train <- ae_ts[format(index(ae_ts), "%Y") < "2010"]
+ae_test <- ae_ts[format(index(ae_ts), "%Y") >= "2010"]
+
+# Checking the results
+print("Training Data:")
+print(head(ae_train))
+print("Testing Data:")
+print(head(ae_test))
+```
+
+```{r}
+# Run auto.arima to get the initial model
+auto_model <- auto.arima(ae_train, seasonal = TRUE)
+print(auto_model)
+
+# Extract the ARIMA order from the auto_model
+order <- arimaorder(auto_model)
+
+# Initialize variables to store the best models according to AICc and BIC
+best_aicc <- Inf
+best_bic <- Inf
+best_aicc_model <- NULL
+best_bic_model <- NULL
+
+for (p in 0:2) {
+  for (q in 0:2) {
+    # Fit ARIMA model with the specified p, d, and q
+    # Note: We're using the d value from the auto.arima() model
+    model <- Arima(ae_train, order = c(p, order[2], q))
+    
+    # Check if this model has a better AICc or BIC than the current best
+    model_aicc <- AICc(model)
+    model_bic <- BIC(model)
+
+    if (model_aicc < best_aicc) {
+      best_aicc <- model_aicc
+      best_aicc_model <- model
+    }
+    
+    if (model_bic < best_bic) {
+      best_bic <- model_bic
+      best_bic_model <- model
+    }
+  }
+}
+
+# Display the best models according to AICc and BIC
+cat("Best model according to AICc:\n")
+print(best_aicc_model)
+cat("\nBest model according to BIC:\n")
+print(best_bic_model)
+```
+
+Auto Arima and Best BIC select the same model: ARIMA(0,1,1) (Model 1)
+Best AICc Model: ARIMA(2,1,2) (Model 2)
+Since auto arima and Best BIC select the same model, I would prefer ARIMA(0,1,1).
+
+```{r}
+#Model 1
+library(xts)
+library(forecast)
+# Also consider loading the zoo package if xts alone does not resolve the issue
+library(zoo)
+
+recursive <- forecast(auto_model, h=12)
+
+```
+
+
+```{r}
+# Initialize the vector to store forecasts
+DirRec <- numeric(length = length(ae_test))
+forecast_dates <- index(ae_test)  # get the dates for the test data
+
+# Copy the initial training set
+current_train <- ae_train
+
+for (i in 1:length(ae_test)) {
+    # Convert current_train to ts for the model fitting
+    current_train_ts <- as.ts(current_train)
+    
+    # Fit the ARIMA model
+    fit1 <- auto.arima(current_train_ts)
+    
+    # Forecast the next point
+    next_forecast <- forecast(fit1, h=1)
+    DirRec[i] <- next_forecast$mean
+    
+    # Update the training data by appending the forecasted value, not the actual!
+    next_index <- forecast_dates[i]  # Corresponding date from ae_test
+    new_data <- xts(next_forecast$mean, order.by = next_index)
+    current_train <- rbind(current_train, new_data)
+}
+
+# Convert DirRec to xts for alignment and comparison
+DirRec_xts <- xts(DirRec, order.by = forecast_dates)
+
+# Plotting results
+#plot(DirRec_xts, main = "Direct Recursive Forecasts", col = "blue", type = "l")
+#lines(ae_test, col = "red")
+#legend("topleft", legend = c("Forecasts", "Actual Data"), col = c("blue", "red"), lty = 1)
+```
+```{r}
+# Assuming DirRec_xts and ae_test are both xts objects with the same length and indexing
+
+# RMSE Calculation
+rmse_dir <- sqrt(mean((DirRec_xts - ae_test)^2))
+
+# MAE Calculation
+mae_dir <- mean(abs(DirRec_xts - ae_test))
+
+# MAPE Calculation
+mape_dir <- mean(abs((DirRec_xts - ae_test) / ae_test)) * 100
+
+# Print the results
+cat("Direct Recursive Forecasting Metrics:\n")
+cat("RMSE:", rmse_dir, "\n")
+cat("MAE:", mae_dir, "\n")
+cat("MAPE:", mape_dir, "%\n")
+
+```
+
+
+```{r}
+# Assuming auto_model is fitted on ae_train
+#recursive <- forecast(auto_model, h=length(ae_test))
+
+# Assuming the forecasts are aligned with the dates in ae_test
+recursive_xts <- xts(recursive$mean, order.by = index(ae_test))
+
+# RMSE Calculation
+rmse_rec <- sqrt(mean((recursive_xts - ae_test)^2))
+
+# MAE Calculation
+mae_rec <- mean(abs(recursive_xts - ae_test))
+
+# MAPE Calculation
+mape_rec <- mean(abs((recursive_xts - ae_test) / ae_test)) * 100
+
+# Print the results
+cat("Simple Recursive Forecasting Metrics:\n")
+cat("RMSE:", rmse_rec, "\n")
+cat("MAE:", mae_rec, "\n")
+cat("MAPE:", mape_rec, "%\n")
+
+```
+Simple Recursive Forecasting method is generally preferred.
+
+### Comparison of Error Metrics:
+
+1. **RMSE (Root Mean Squared Error)**:
+   - **Direct Recursive Forecasting**: 1423.475
+   - **Simple Recursive Forecasting**: 1352.829
+
+   The lower RMSE for the Simple Recursive method indicates that, on average, its predictions are closer to the actual values. RMSE is sensitive to outliers, and a lower value suggests better overall prediction performance with less variance in errors.
+
+2. **MAE (Mean Absolute Error)**:
+   - **Direct Recursive Forecasting**: 1263.393
+   - **Simple Recursive Forecasting**: 1162.676
+
+   The MAE measures the average magnitude of the errors in a set of forecasts, without considering their direction (positive or negative). The lower MAE for the Simple Recursive method suggests it has better average performance in terms of error magnitude.
+
+3. **MAPE (Mean Absolute Percentage Error)**:
+   - **Direct Recursive Forecasting**: 13.95672%
+   - **Simple Recursive Forecasting**: 13.12906%
+
+   MAPE expresses the forecast error as a percentage, providing a view of the error relative to the true values. The lower MAPE in the Simple Recursive method implies that its forecasts are generally closer to the actual values in percentage terms, which is particularly useful in contexts where you want to understand error relative to the scale of the data.
+
+### Decision:
+
+Given that the Simple Recursive Forecasting method has better (lower) values across all three key error metrics (RMSE, MAE, and MAPE), it is the preferred model for forecasting in this scenario. It demonstrates more accurate and consistent predictions compared to the Direct Recursive method.
+
+### Winning Model for American Eagle Airline: ARIMA(0, 1, 1) with Recursive Forcasting
+
+## Hawaiian
+```{r}
+haw <- haw[, c("Date", "Baggage")]
+
+library(xts)
+haw_ts <- xts(haw$Baggage, order.by = haw$Date)
+
+# Check the time series object
+print(haw_ts)
+```
+
+### Train Test Split
+```{r}
+# Split the data based on the year 2010
+haw_train <- haw_ts[format(index(haw_ts), "%Y") < "2010"]
+haw_test <- haw_ts[format(index(haw_ts), "%Y") >= "2010"]
+
+# Checking the results
+print("Training Data:")
+print(head(haw_train))
+print("Testing Data:")
+print(head(haw_test))
+```
+
+
+```{r}
+# Run auto.arima to get the initial model
+auto_model <- auto.arima(haw_train, seasonal = TRUE)
+print(auto_model)
+
+# Extract the ARIMA order from the auto_model
+order <- arimaorder(auto_model)
+
+# Initialize variables to store the best models according to AICc and BIC
+best_aicc <- Inf
+best_bic <- Inf
+best_aicc_model <- NULL
+best_bic_model <- NULL
+
+for (p in 0:2) {
+  for (q in 0:2) {
+    # Fit ARIMA model with the specified p, d, and q
+    # Note: We're using the d value from the auto.arima() model
+    model <- Arima(haw_train, order = c(p, order[2], q))
+    
+    # Check if this model has a better AICc or BIC than the current best
+    model_aicc <- AICc(model)
+    model_bic <- BIC(model)
+
+    if (model_aicc < best_aicc) {
+      best_aicc <- model_aicc
+      best_aicc_model <- model
+    }
+    
+    if (model_bic < best_bic) {
+      best_bic <- model_bic
+      best_bic_model <- model
+    }
+  }
+}
+
+# Display the best models according to AICc and BIC
+cat("Best model according to AICc:\n")
+print(best_aicc_model)
+cat("\nBest model according to BIC:\n")
+print(best_bic_model)
+```
+
+Auto Arima and Best AICc select the same model: ARIMA(1,1,1) (Model 1)
+Best BIC Model: ARIMA(0,1,0) (Model 2)
+Since auto arima and Best AICc select the same model, I would prefer ARIMA(1,1,1).
+
+```{r}
+#Model 1
+library(xts)
+library(forecast)
+# Also consider loading the zoo package if xts alone does not resolve the issue
+library(zoo)
+
+recursive <- forecast(auto_model, h=12)
+recursive_xts <- xts(recursive$mean, order.by = index(haw_test))
+```
+
+
+```{r}
+# Initialize the vector to store forecasts
+DirRec <- numeric(length = length(haw_test))
+forecast_dates <- index(haw_test)  # get the dates for the test data
+
+# Copy the initial training set
+current_train <- haw_train
+
+for (i in 1:length(haw_test)) {
+    # Convert current_train to ts for the model fitting
+    current_train_ts <- as.ts(current_train)
+    
+    # Fit the ARIMA model
+    fit1 <- auto.arima(current_train_ts)
+    
+    # Forecast the next point
+    next_forecast <- forecast(fit1, h=1)
+    DirRec[i] <- next_forecast$mean
+    
+    # Update the training data by appending the forecasted value, not the actual!
+    next_index <- forecast_dates[i]  # Corresponding date from ae_test
+    new_data <- xts(next_forecast$mean, order.by = next_index)
+    current_train <- rbind(current_train, new_data)
+}
+
+# Convert DirRec to xts for alignment and comparison
+DirRec_xts <- xts(DirRec, order.by = forecast_dates)
+
+# Plotting results
+#plot(DirRec_xts, main = "Direct Recursive Forecasts", col = "blue", type = "l")
+#lines(ae_test, col = "red")
+#legend("topleft", legend = c("Forecasts", "Actual Data"), col = c("blue", "red"), lty = 1)
+```
+
+
+```{r}
+# Assuming DirRec_xts and ae_test are both xts objects with the same length and indexing
+
+# RMSE Calculation
+rmse_dir <- sqrt(mean((DirRec_xts - haw_test)^2))
+
+# MAE Calculation
+mae_dir <- mean(abs(DirRec_xts - haw_test))
+
+# MAPE Calculation
+mape_dir <- mean(abs((DirRec_xts - haw_test) / haw_test)) * 100
+
+# Print the results
+cat("Direct Recursive Forecasting Metrics:\n")
+cat("RMSE:", rmse_dir, "\n")
+cat("MAE:", mae_dir, "\n")
+cat("MAPE:", mape_dir, "%\n")
+
+```
+
+
+```{r}
+
+# RMSE Calculation
+rmse_rec <- sqrt(mean((recursive_xts - haw_test)^2))
+
+# MAE Calculation
+mae_rec <- mean(abs(recursive_xts - haw_test))
+
+# MAPE Calculation
+mape_rec <- mean(abs((recursive_xts - haw_test) / haw_test)) * 100
+
+# Print the results
+cat("Simple Recursive Forecasting Metrics:\n")
+cat("RMSE:", rmse_rec, "\n")
+cat("MAE:", mae_rec, "\n")
+cat("MAPE:", mape_rec, "%\n")
+
+```
+
+### Updated Comparison of Error Metrics:
+
+1. **RMSE (Root Mean Squared Error)**
+   - **Direct Recursive Forecasting**: 436.9503
+   - **Simple Recursive Forecasting**: 523.3765
+
+   The lower RMSE for the Direct Recursive method indicates that, on average, its predictions are closer to the actual values and have less variance in errors. RMSE is particularly relevant for assessing overall model performance when large errors are particularly undesirable.
+
+2. **MAE (Mean Absolute Error)**
+   - **Direct Recursive Forecasting**: 327.2882
+   - **Simple Recursive Forecasting**: 351.8159
+
+   The MAE for the Direct Recursive method is lower, indicating that the average magnitude of errors is smaller compared to the Simple Recursive method. This metric is less sensitive to outliers than RMSE and provides a measure of the typical error size.
+
+3. **MAPE (Mean Absolute Percentage Error)**
+   - **Direct Recursive Forecasting**: 18.40634%
+   - **Simple Recursive Forecasting**: 18.42172%
+
+   The MAPE is slightly lower for the Direct Recursive method, though the difference is very minimal. This metric shows the error as a percentage of the actual values, providing a sense of the error relative to the size of the numbers involved.
+
+### Preferred Method:
+
+Given that the Direct Recursive Forecasting method has better (lower) values in RMSE, MAE, and nearly the same in MAPE compared to the Simple Recursive method, it would be preferred in this scenario based on the accuracy of the forecasts. The lower RMSE and MAE suggest that the Direct Recursive method is more accurate and consistent in predicting the test data.
+
+### Winning Model for Hawaii Airline: ARIMA(1, 1, 1) with Direct Recursive Forcasting
+
+## United
+```{r}
+uni <- uni[, c("Date", "Baggage")]
+
+library(xts)
+uni_ts <- xts(uni$Baggage, order.by = uni$Date)
+
+# Check the time series object
+print(uni_ts)
+```
+
+
+
+### Train Test Split
+```{r}
+# Split the data based on the year 2010
+uni_train <- uni_ts[format(index(uni_ts), "%Y") < "2010"]
+uni_test <- uni_ts[format(index(uni_ts), "%Y") >= "2010"]
+
+# Checking the results
+print("Training Data:")
+print(head(uni_train))
+print("Testing Data:")
+print(head(uni_test))
+```
+
+```{r}
+# Run auto.arima to get the initial model
+auto_model <- auto.arima(uni_train, seasonal = TRUE)
+print(auto_model)
+
+# Extract the ARIMA order from the auto_model
+order <- arimaorder(auto_model)
+
+# Initialize variables to store the best models according to AICc and BIC
+best_aicc <- Inf
+best_bic <- Inf
+best_aicc_model <- NULL
+best_bic_model <- NULL
+
+for (p in 0:2) {
+  for (q in 0:2) {
+    # Fit ARIMA model with the specified p, d, and q
+    # Note: We're using the d value from the auto.arima() model
+    model <- Arima(uni_train, order = c(p, order[2], q))
+    
+    # Check if this model has a better AICc or BIC than the current best
+    model_aicc <- AICc(model)
+    model_bic <- BIC(model)
+
+    if (model_aicc < best_aicc) {
+      best_aicc <- model_aicc
+      best_aicc_model <- model
+    }
+    
+    if (model_bic < best_bic) {
+      best_bic <- model_bic
+      best_bic_model <- model
+    }
+  }
+}
+
+# Display the best models according to AICc and BIC
+cat("Best model according to AICc:\n")
+print(best_aicc_model)
+cat("\nBest model according to BIC:\n")
+print(best_bic_model)
+```
+
+Auto Arima, Best AICc and Best BIC Model select the same model: ARIMA(1,0,0)
+
+```{r}
+#Model 1
+library(xts)
+library(forecast)
+# Also consider loading the zoo package if xts alone does not resolve the issue
+library(zoo)
+
+recursive <- forecast(auto_model, h=12)
+recursive_xts <- xts(recursive$mean, order.by = index(uni_test))
+```
+
+
+```{r}
+# Initialize the vector to store forecasts
+DirRec <- numeric(length = length(uni_test))
+forecast_dates <- index(uni_test)  # get the dates for the test data
+
+# Copy the initial training set
+current_train <- uni_train
+
+for (i in 1:length(uni_test)) {
+    # Convert current_train to ts for the model fitting
+    current_train_ts <- as.ts(current_train)
+    
+    # Fit the ARIMA model
+    fit1 <- auto.arima(current_train_ts)
+    
+    # Forecast the next point
+    next_forecast <- forecast(fit1, h=1)
+    DirRec[i] <- next_forecast$mean
+    
+    # Update the training data by appending the forecasted value, not the actual!
+    next_index <- forecast_dates[i]  # Corresponding date from ae_test
+    new_data <- xts(next_forecast$mean, order.by = next_index)
+    current_train <- rbind(current_train, new_data)
+}
+
+# Convert DirRec to xts for alignment and comparison
+DirRec_xts <- xts(DirRec, order.by = forecast_dates)
+
+# Plotting results
+#plot(DirRec_xts, main = "Direct Recursive Forecasts", col = "blue", type = "l")
+#lines(ae_test, col = "red")
+#legend("topleft", legend = c("Forecasts", "Actual Data"), col = c("blue", "red"), lty = 1)
+```
+
+
+```{r}
+# Assuming DirRec_xts and ae_test are both xts objects with the same length and indexing
+
+# RMSE Calculation
+rmse_dir <- sqrt(mean((DirRec_xts - uni_test)^2))
+
+# MAE Calculation
+mae_dir <- mean(abs(DirRec_xts - uni_test))
+
+# MAPE Calculation
+mape_dir <- mean(abs((DirRec_xts - uni_test) / uni_test)) * 100
+
+# Print the results
+cat("Direct Recursive Forecasting Metrics:\n")
+cat("RMSE:", rmse_dir, "\n")
+cat("MAE:", mae_dir, "\n")
+cat("MAPE:", mape_dir, "%\n")
+
+```
+
+
+```{r}
+
+# RMSE Calculation
+rmse_rec <- sqrt(mean((recursive_xts - uni_test)^2))
+
+# MAE Calculation
+mae_rec <- mean(abs(recursive_xts - uni_test))
+
+# MAPE Calculation
+mape_rec <- mean(abs((recursive_xts - uni_test) / uni_test)) * 100
+
+# Print the results
+cat("Simple Recursive Forecasting Metrics:\n")
+cat("RMSE:", rmse_rec, "\n")
+cat("MAE:", mae_rec, "\n")
+cat("MAPE:", mape_rec, "%\n")
+
+```
+Based on the metrics, the performance of the Direct Recursive Forecasting and Simple Recursive Forecasting methods is nearly identical.
+
+- **RMSE**:
+  - Direct Recursive Forecasting: 10510.63
+  - Simple Recursive Forecasting: 10510.57
+  
+  The RMSE is slightly lower for the Simple Recursive Forecasting, suggesting it has a marginally smaller average error squared.
+
+- **MAE**:
+  - Direct Recursive Forecasting: 10171.2
+  - Simple Recursive Forecasting: 10171.15
+  
+  The MAE is also slightly lower for Simple Recursive Forecasting, indicating it has a marginally smaller average error.
+
+- **MAPE**:
+  - Direct Recursive Forecasting: 87.33729%
+  - Simple Recursive Forecasting: 87.33682%
+  
+The MAPE, which shows the error as a percentage of the actual values, is fractionally lower for Simple Recursive Forecasting.
+
+Given these slight differences, Simple Recursive Forecasting can be considered marginally better in terms of these three metrics. However, the differences are very minimal, indicating that in practical terms, both models are performing almost identically. Depending on other factors like computational efficiency, ease of implementation, and sensitivity to outliers, your choice might tilt towards one over the other.
+
+### Winning Model for Uniited Airline: ARIMA(1,0,0) with Simple Recursive

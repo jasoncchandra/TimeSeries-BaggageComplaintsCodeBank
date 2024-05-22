@@ -1,0 +1,461 @@
+---
+title: "TS_finalproject"
+output: html_document
+date: "2024-05-14"
+---
+
+# Data Importing
+```{r}
+data <- read.csv('baggagecomplaints.csv')
+data$Date <- as.Date(paste(data$Year, data$Month, "01", sep = "-"))
+```
+
+```{r}
+airlines <- unique(data$Airline)
+airline_data_frames <- list()
+for (airline in airlines) {
+  airline_data_frames[[airline]] <- subset(data, Airline == airline)
+}
+```
+
+```{r}
+ae <- airline_data_frames[['American Eagle']]
+haw <- airline_data_frames[['Hawaiian']]
+uni <- airline_data_frames[['United']]
+```
+
+
+## American Eagle
+```{r}
+ae <- ae[, c("Date","Scheduled", "Cancelled", "Enplaned","Baggage")]
+
+cutoff_date <- as.Date("2010-01-01")
+
+train_ae <- ae[ae$Date < cutoff_date, ]
+valid_ae <- ae[ae$Date >= cutoff_date, ]
+
+
+corr_ae <- cor(ae[, c("Scheduled", "Cancelled", "Enplaned","Baggage")], use = "complete.obs")
+print(corr_ae)
+```
+
+```{r}
+library(ggplot2)
+library(reshape2)
+plot_scheduled <- ggplot(ae, aes(x = Date, y = Scheduled)) +
+  geom_line(color = "blue") +
+  labs(title = "Scheduled Flights Over Time", x = "Date", y = "Scheduled Flights") +
+  theme_minimal()
+
+# Plot Cancelled
+plot_cancelled <- ggplot(ae, aes(x = Date, y = Cancelled)) +
+  geom_line(color = "red") +
+  labs(title = "Cancelled Flights Over Time", x = "Date", y = "Cancelled Flights") +
+  theme_minimal()
+
+# Plot Enplaned
+plot_enplaned <- ggplot(ae, aes(x = Date, y = Enplaned)) +
+  geom_line(color = "green") +
+  labs(title = "Enplaned Passengers Over Time", x = "Date", y = "Enplaned Passengers") +
+  theme_minimal()
+
+# Plot Baggage
+plot_baggage <- ggplot(ae, aes(x = Date, y = Baggage)) +
+  geom_line(color = "purple") +
+  labs(title = "Baggage Per Enplaned Passenger Over Time", x = "Date", y = "Baggage Per Enplaned Passenger") +
+  theme_minimal()
+
+# Display the plots
+print(plot_scheduled)
+print(plot_cancelled)
+print(plot_enplaned)
+print(plot_baggage)
+```
+
+
+```{r}
+acf_scheduled <- acf(ae$Scheduled, main = "ACF of Scheduled Flights")
+acf_cancelled <- acf(ae$Cancelled, main = "ACF of Cancelled Flights")
+acf_enplaned <- acf(ae$Enplaned, main = "ACF of Enplaned Passengers")
+acf_baggage_per_enplaned <- acf(ae$Baggage, main = "ACF of Baggage")
+```
+
+```{r}
+library(tseries)
+
+kpss <- kpss.test(ae$Baggage)
+adf <- adf.test(ae$Baggage)
+
+print(kpss)
+print(adf)
+```
+
+
+### Model
+```{r}
+lm_ae <- lm(Baggage ~ Scheduled + Cancelled + Enplaned, data = train_ae)
+print(summary(lm_ae))
+
+residual_ae <- residuals(lm_ae)
+plot(residual_ae,type = "o", main = "Residuals from Linear Model for American Eagle", ylab = "Residuals", xlab = "Observations")
+abline(h=0, col = "Red")
+
+acf(residual_ae,main = "ACF of LM residuals")
+qqnorm(residual_ae)
+qqline(residual_ae)
+
+library(car)
+ljung_box_arima <- Box.test(residual_ae, type = "Ljung-Box")
+durbin_watson <- dwtest(lm_ae)
+
+print(ljung_box_arima)
+print(durbin_watson)
+```
+```{r}
+xreg_ae <- cbind(train_ae$Scheduled, train_ae$Cancelled, train_ae$Enplaned)
+dyn_ae <- auto.arima(train_ae$Baggage, xreg=xreg_ae)
+summary(dyn_ae)
+
+resid_dr_ae <- residuals(dyn_ae)
+plot(resid_dr_ae,type = "o", main = "Residuals from Dynamic Regression for American Eagle", ylab = "Residuals", xlab = "Observations")
+abline(h=0, col = "Red")
+
+acf(resid_dr_ae,main = "ACF of LM with ARIMA residuals")
+qqnorm(resid_dr_ae)
+qqline(resid_dr_ae)
+
+ljung_box_arima <- Box.test(resid_dr_ae, type = "Ljung-Box")
+
+print(ljung_box_arima)
+```
+
+## Hawaiian
+```{r}
+haw <- haw[, c("Date","Scheduled", "Cancelled", "Enplaned","Baggage")]
+
+cutoff_date <- as.Date("2010-01-01")
+
+train_haw <- haw[haw$Date < cutoff_date, ]
+valid_haw <- haw[haw$Date >= cutoff_date, ]
+
+
+corr_haw <- cor(haw[, c("Scheduled", "Cancelled", "Enplaned","Baggage")], use = "complete.obs")
+print(corr_haw)
+```
+
+```{r}
+plot_scheduled <- ggplot(haw, aes(x = Date, y = Scheduled)) +
+  geom_line(color = "blue") +
+  labs(title = "Scheduled Flights Over Time", x = "Date", y = "Scheduled Flights") +
+  theme_minimal()
+
+# Plot Cancelled
+plot_cancelled <- ggplot(haw, aes(x = Date, y = Cancelled)) +
+  geom_line(color = "red") +
+  labs(title = "Cancelled Flights Over Time", x = "Date", y = "Cancelled Flights") +
+  theme_minimal()
+
+# Plot Enplaned
+plot_enplaned <- ggplot(haw, aes(x = Date, y = Enplaned)) +
+  geom_line(color = "green") +
+  labs(title = "Enplaned Passengers Over Time", x = "Date", y = "Enplaned Passengers") +
+  theme_minimal()
+
+# Plot Baggage
+plot_baggage <- ggplot(haw, aes(x = Date, y = Baggage)) +
+  geom_line(color = "purple") +
+  labs(title = "Baggage Per Enplaned Passenger Over Time", x = "Date", y = "Baggage Per Enplaned Passenger") +
+  theme_minimal()
+
+# Display the plots
+print(plot_scheduled)
+print(plot_cancelled)
+print(plot_enplaned)
+print(plot_baggage)
+```
+
+
+### Model
+```{r}
+lm_haw <- lm(Baggage ~ Scheduled + Cancelled + Enplaned, data = train_haw)
+print(summary(lm_haw))
+
+residual_haw <- residuals(lm_haw)
+plot(residual_haw,type = "o", main = "Residuals from Linear Model for Hawaiian", ylab = "Residuals", xlab = "Observations")
+abline(h=0, col = "Red")
+
+acf(residual_haw,main = "ACF of LM residuals")
+qqnorm(residual_haw)
+qqline(residual_haw)
+
+ljung_box_arima <- Box.test(residual_haw, type = "Ljung-Box")
+durbin_watson <- dwtest(lm_haw)
+
+print(ljung_box_arima)
+print(durbin_watson)
+```
+
+
+```{r}
+xreg_haw <- cbind(train_haw$Scheduled, train_haw$Cancelled, train_haw$Enplaned)
+dyn_haw <- auto.arima(train_haw$Baggage, xreg=xreg_haw)
+summary(dyn_haw)
+
+resid_dr_haw <- residuals(dyn_haw)
+plot(resid_dr_haw,type = "o", main = "Residuals from Dynamic Regression for Hawaiian", ylab = "Residuals", xlab = "Observations")
+abline(h=0, col = "Red")
+
+acf(resid_dr_haw,main = "ACF of LM residuals")
+qqnorm(resid_dr_haw)
+qqline(resid_dr_haw)
+
+ljung_box_arima <- Box.test(resid_dr_haw, type = "Ljung-Box")
+
+print(ljung_box_arima)
+```
+
+
+
+## United
+```{r}
+uni <- uni[, c("Date","Scheduled", "Cancelled", "Enplaned","Baggage")]
+
+cutoff_date <- as.Date("2010-01-01")
+
+train_uni <- uni[uni$Date < cutoff_date, ]
+valid_uni <- uni[uni$Date >= cutoff_date, ]
+
+
+corr_uni <- cor(uni[, c("Scheduled", "Cancelled", "Enplaned","Baggage")], use = "complete.obs")
+print(corr_uni)
+```
+
+```{r}
+plot_scheduled <- ggplot(uni, aes(x = Date, y = Scheduled)) +
+  geom_line(color = "blue") +
+  labs(title = "Scheduled Flights Over Time", x = "Date", y = "Scheduled Flights") +
+  theme_minimal()
+
+# Plot Cancelled
+plot_cancelled <- ggplot(uni, aes(x = Date, y = Cancelled)) +
+  geom_line(color = "red") +
+  labs(title = "Cancelled Flights Over Time", x = "Date", y = "Cancelled Flights") +
+  theme_minimal()
+
+# Plot Enplaned
+plot_enplaned <- ggplot(uni, aes(x = Date, y = Enplaned)) +
+  geom_line(color = "green") +
+  labs(title = "Enplaned Passengers Over Time", x = "Date", y = "Enplaned Passengers") +
+  theme_minimal()
+
+# Plot Baggage
+plot_baggage <- ggplot(uni, aes(x = Date, y = Baggage)) +
+  geom_line(color = "purple") +
+  labs(title = "Baggage Per Enplaned Passenger Over Time", x = "Date", y = "Baggage Per Enplaned Passenger") +
+  theme_minimal()
+
+# Display the plots
+print(plot_scheduled)
+print(plot_cancelled)
+print(plot_enplaned)
+print(plot_baggage)
+```
+
+
+### Model
+```{r}
+lm_uni <- lm(Baggage ~ Scheduled + Cancelled + Enplaned, data = train_uni)
+print(summary(lm_uni))
+
+residual_uni <- residuals(lm_uni)
+plot(residual_uni,type = "o", main = "Residuals from Linear Model for United", ylab = "Residuals", xlab = "Observations")
+abline(h=0, col = "Red")
+
+acf(residual_uni,main = "ACF of LM residuals")
+qqnorm(residual_uni)
+qqline(residual_uni)
+
+ljung_box_arima <- Box.test(residual_uni, type = "Ljung-Box")
+durbin_watson <- dwtest(lm_uni)
+
+print(ljung_box_arima)
+print(durbin_watson)
+```
+
+
+```{r}
+xreg_uni <- cbind(train_uni$Scheduled, train_uni$Cancelled, train_uni$Enplaned)
+dyn_uni <- auto.arima(train_uni$Baggage, xreg=xreg_uni)
+summary(dyn_uni)
+
+resid_dr_uni <- residuals(dyn_uni)
+plot(resid_dr_uni,type = "o", main = "Residuals from Dynamic Regression for United", ylab = "Residuals", xlab = "Observations")
+abline(h=0, col = "Red")
+
+acf(resid_dr_uni,main = "ACF of LM residuals")
+qqnorm(resid_dr_uni)
+qqline(resid_dr_uni)
+
+ljung_box_arima <- Box.test(resid_dr_uni, type = "Ljung-Box")
+
+print(ljung_box_arima)
+```
+# Evaluation
+
+## AE
+
+```{r}
+#xreg_valid_ae <- cbind(valid_ae$Scheduled, valid_ae$Cancelled, valid_ae$Enplaned)
+
+# Predict using the models
+#predictions_arima_ae <- forecast(dyn_ae, xreg = xreg_valid_ae)
+predictions_lm_ae <- predict(lm_ae, newdata = valid_ae,interval = "confidence")
+```
+
+
+
+```{r}
+results_lm <- data.frame(
+  Date = valid_ae$Date,
+  Actual = valid_ae$Baggage,
+  Predicted = predictions_lm_ae[, "fit"],
+  Lower = predictions_lm_ae[, "lwr"],
+  Upper = predictions_lm_ae[, "upr"]
+)
+
+results_arima <- data.frame(
+  Date = valid_ae$Date,
+  Actual = valid_ae$Baggage,
+  Predicted = predictions_arima_ae$mean,
+  Lower = predictions_arima_ae$lower[, 2],
+  Upper = predictions_arima_ae$upper[, 2]
+)
+
+# Plot the linear model results
+plot_lm <- ggplot(results_lm, aes(x = Date)) +
+  geom_line(aes(y = Actual, color = "Actual")) +
+  geom_line(aes(y = Predicted, color = "Predicted")) +
+  geom_ribbon(aes(ymin = Lower, ymax = Upper), alpha = 0.2) +
+  labs(title = "Linear Model: Baggage Complaints", x = "Date", y = "Baggage Complaints") +
+  theme_minimal() +
+  scale_color_manual(values = c("Actual" = "black", "Predicted" = "red")) +
+  theme(legend.title = element_blank())
+
+# Plot the ARIMA model results
+plot_arima <- ggplot(results_arima, aes(x = Date)) +
+  geom_line(aes(y = Actual, color = "Actual")) +
+  geom_line(aes(y = Predicted, color = "Predicted")) +
+  geom_ribbon(aes(ymin = Lower, ymax = Upper), alpha = 0.2) +
+  labs(title = "ARIMA Model: Baggage Complaints", x = "Date", y = "Baggage Complaints") +
+  theme_minimal() +
+  scale_color_manual(values = c("Actual" = "black", "Predicted" = "blue")) +
+  theme(legend.title = element_blank())
+
+# Display the plots
+print(plot_lm)
+print(plot_arima)
+```
+
+
+```{r}
+
+library(Metrics)
+
+# Evaluate ARIMA Model
+mae_arima <- mae(valid_ae$Baggage, predictions_arima_ae$mean)
+mse_arima <- mse(valid_ae$Baggage, predictions_arima_ae$mean)
+rmse_arima <- sqrt(mse_arima)  # Calculating RMSE
+
+# Evaluate Linear Model
+mae_lm <- mae(valid_ae$Baggage, predictions_lm_ae)
+mse_lm <- mse(valid_ae$Baggage, predictions_lm_ae)
+rmse_lm <- sqrt(mse_lm)  # Calculating RMSE
+
+# Print the results
+# Assuming you've calculated MAE, MSE, and RMSE as shown before
+evaluation_table <- data.frame(
+  Model = c("ARIMA", "Linear Regression"),
+  MAE = c(mae_arima, mae_lm),
+  MSE = c(mse_arima, mse_lm),
+  RMSE = c(rmse_arima, rmse_lm)
+)
+
+library(knitr)
+kable(evaluation_table, caption = "Performance Evaluation of Models", align = 'c')
+```
+
+## Hawaiian
+```{r}
+xreg_valid_haw <- cbind(valid_haw$Scheduled, valid_haw$Cancelled, valid_haw$Enplaned)
+
+# Predict using the models
+predictions_arima_haw <- forecast(dyn_haw, xreg = xreg_valid_haw)
+predictions_lm_haw <- predict(lm_haw, newdata = valid_haw)
+```
+
+```{r}
+
+library(Metrics)
+
+# Evaluate ARIMA Model
+mae_arima <- mae(valid_haw$Baggage, predictions_arima_haw$mean)
+mse_arima <- mse(valid_haw$Baggage, predictions_arima_haw$mean)
+rmse_arima <- sqrt(mse_arima)  # Calculating RMSE
+
+# Evaluate Linear Model
+mae_lm <- mae(valid_haw$Baggage, predictions_lm_haw)
+mse_lm <- mse(valid_haw$Baggage, predictions_lm_haw)
+rmse_lm <- sqrt(mse_lm)  # Calculating RMSE
+
+# Print the results
+# Assuming you've calculated MAE, MSE, and RMSE as shown before
+evaluation_table <- data.frame(
+  Model = c("ARIMA", "Linear Regression"),
+  MAE = c(mae_arima, mae_lm),
+  MSE = c(mse_arima, mse_lm),
+  RMSE = c(rmse_arima, rmse_lm)
+)
+
+library(knitr)
+kable(evaluation_table, caption = "Performance Evaluation of Models", align = 'c')
+```
+
+
+## United
+```{r}
+xreg_valid_uni <- cbind(valid_uni$Scheduled, valid_uni$Cancelled, valid_uni$Enplaned)
+
+# Predict using the models
+predictions_arima_uni <- forecast(dyn_uni, xreg = xreg_valid_uni)
+predictions_lm_uni <- predict(lm_uni, newdata = valid_uni)
+```
+
+```{r}
+
+library(Metrics)
+
+# Evaluate ARIMA Model
+mae_arima <- mae(valid_uni$Baggage, predictions_arima_uni$mean)
+mse_arima <- mse(valid_uni$Baggage, predictions_arima_uni$mean)
+rmse_arima <- sqrt(mse_arima)  # Calculating RMSE
+
+# Evaluate Linear Model
+mae_lm <- mae(valid_uni$Baggage, predictions_lm_uni)
+mse_lm <- mse(valid_uni$Baggage, predictions_lm_uni)
+rmse_lm <- sqrt(mse_lm)  # Calculating RMSE
+
+# Print the results
+evaluation_table <- data.frame(
+  Model = c("ARIMA", "Linear Regression"),
+  MAE = c(mae_arima, mae_lm),
+  MSE = c(mse_arima, mse_lm),
+  RMSE = c(rmse_arima, rmse_lm)
+)
+
+library(knitr)
+kable(evaluation_table, caption = "Performance Evaluation of Models", align = 'c')
+```
+
+
+
+
