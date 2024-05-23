@@ -31,6 +31,10 @@ ae <- ae[, c("Date","Scheduled", "Cancelled", "Enplaned","Baggage")]
 
 cutoff_date <- as.Date("2010-01-01")
 
+Diff_Baggage_ae <- diff(ae$Baggage, differences = 1)
+ae <- ae[-1, ]
+ae$Diff_Baggage <- Diff_Baggage_ae
+
 train_ae <- ae[ae$Date < cutoff_date, ]
 valid_ae <- ae[ae$Date >= cutoff_date, ]
 
@@ -78,13 +82,14 @@ acf_scheduled <- acf(ae$Scheduled, main = "ACF of Scheduled Flights")
 acf_cancelled <- acf(ae$Cancelled, main = "ACF of Cancelled Flights")
 acf_enplaned <- acf(ae$Enplaned, main = "ACF of Enplaned Passengers")
 acf_baggage_per_enplaned <- acf(ae$Baggage, main = "ACF of Baggage")
+acf_baggage_per_enplaned <- acf(ae$Diff_Baggage, main = "ACF of Diff_Baggage")
 ```
 
 ```{r}
 library(tseries)
 
-kpss <- kpss.test(ae$Baggage)
-adf <- adf.test(ae$Baggage)
+kpss <- kpss.test(ae$Diff_Baggage)
+adf <- adf.test(ae$Diff_Baggage)
 
 print(kpss)
 print(adf)
@@ -93,7 +98,8 @@ print(adf)
 
 ### Model
 ```{r}
-lm_ae <- lm(Baggage ~ Scheduled + Cancelled + Enplaned, data = train_ae)
+# Fit the linear model on the differenced Baggage variable
+lm_ae <- lm(Diff_Baggage ~ Scheduled + Cancelled + Enplaned, data = train_ae)
 print(summary(lm_ae))
 
 residual_ae <- residuals(lm_ae)
@@ -113,7 +119,7 @@ print(durbin_watson)
 ```
 ```{r}
 xreg_ae <- cbind(train_ae$Scheduled, train_ae$Cancelled, train_ae$Enplaned)
-dyn_ae <- auto.arima(train_ae$Baggage, xreg=xreg_ae)
+dyn_ae <- auto.arima(train_ae$Diff_Baggage, xreg=xreg_ae)
 summary(dyn_ae)
 
 resid_dr_ae <- residuals(dyn_ae)
@@ -134,7 +140,9 @@ print(ljung_box_arima)
 haw <- haw[, c("Date","Scheduled", "Cancelled", "Enplaned","Baggage")]
 
 cutoff_date <- as.Date("2010-01-01")
-
+Diff_Baggage_haw <- diff(haw$Baggage, differences = 1)
+haw <- haw[-1, ]
+haw$Diff_Baggage <- Diff_Baggage_haw
 train_haw <- haw[haw$Date < cutoff_date, ]
 valid_haw <- haw[haw$Date >= cutoff_date, ]
 
@@ -174,10 +182,19 @@ print(plot_enplaned)
 print(plot_baggage)
 ```
 
+```{r}
+acf_baggage_per_Baggage <- acf(haw$Baggage,lag=100, main = "ACF of Baggage")
+```
+
+
+```{r}
+adf.test(uni$Baggage)
+kpss.test(uni$Baggage)
+```
 
 ### Model
 ```{r}
-lm_haw <- lm(Baggage ~ Scheduled + Cancelled + Enplaned, data = train_haw)
+lm_haw <- lm(Diff_Baggage ~ Scheduled + Cancelled + Enplaned, data = train_haw)
 print(summary(lm_haw))
 
 residual_haw <- residuals(lm_haw)
@@ -198,7 +215,7 @@ print(durbin_watson)
 
 ```{r}
 xreg_haw <- cbind(train_haw$Scheduled, train_haw$Cancelled, train_haw$Enplaned)
-dyn_haw <- auto.arima(train_haw$Baggage, xreg=xreg_haw)
+dyn_haw <- auto.arima(train_haw$Diff_Baggage, xreg=xreg_haw)
 summary(dyn_haw)
 
 resid_dr_haw <- residuals(dyn_haw)
@@ -221,13 +238,19 @@ print(ljung_box_arima)
 uni <- uni[, c("Date","Scheduled", "Cancelled", "Enplaned","Baggage")]
 
 cutoff_date <- as.Date("2010-01-01")
-
+Diff_Baggage_uni <- diff(uni$Baggage, differences = 1)
+uni <- uni[-1, ]
+uni$Diff_Baggage <- Diff_Baggage_uni
 train_uni <- uni[uni$Date < cutoff_date, ]
 valid_uni <- uni[uni$Date >= cutoff_date, ]
 
 
 corr_uni <- cor(uni[, c("Scheduled", "Cancelled", "Enplaned","Baggage")], use = "complete.obs")
 print(corr_uni)
+```
+
+```{r}
+acf_baggage_per_Baggage <- acf(uni$Baggage,lag=100, main = "ACF of Baggage")
 ```
 
 ```{r}
@@ -264,7 +287,7 @@ print(plot_baggage)
 
 ### Model
 ```{r}
-lm_uni <- lm(Baggage ~ Scheduled + Cancelled + Enplaned, data = train_uni)
+lm_uni <- lm(Diff_Baggage ~ Scheduled + Cancelled + Enplaned, data = train_uni)
 print(summary(lm_uni))
 
 residual_uni <- residuals(lm_uni)
@@ -285,7 +308,7 @@ print(durbin_watson)
 
 ```{r}
 xreg_uni <- cbind(train_uni$Scheduled, train_uni$Cancelled, train_uni$Enplaned)
-dyn_uni <- auto.arima(train_uni$Baggage, xreg=xreg_uni)
+dyn_uni <- auto.arima(train_uni$Diff_Baggage, xreg=xreg_uni)
 summary(dyn_uni)
 
 resid_dr_uni <- residuals(dyn_uni)
@@ -305,56 +328,29 @@ print(ljung_box_arima)
 ## AE
 
 ```{r}
-#xreg_valid_ae <- cbind(valid_ae$Scheduled, valid_ae$Cancelled, valid_ae$Enplaned)
+xreg_valid_ae <- cbind(valid_ae$Scheduled, valid_ae$Cancelled, valid_ae$Enplaned)
 
 # Predict using the models
-#predictions_arima_ae <- forecast(dyn_ae, xreg = xreg_valid_ae)
-predictions_lm_ae <- predict(lm_ae, newdata = valid_ae,interval = "confidence")
+diff_pred_arima_ae <- forecast(dyn_ae, xreg = xreg_valid_ae)
+diff_pred_lm_ae <- predict(lm_ae, newdata = valid_ae, interval = "confidence")
+
+# Initialize vectors for cumulative predictions
+predictions_arima_ae <- numeric(length(diff_pred_arima_ae$mean))
+predictions_lm_ae <- numeric(length(diff_pred_lm_ae[, "fit"]))
+
+# The last observed value in the training set
+last_train_value <- tail(train_ae$Baggage, 1)
+
+# Compute the cumulative predictions
+predictions_arima_ae[1] <- last_train_value + diff_pred_arima_ae$mean[1]
+predictions_lm_ae[1] <- last_train_value + diff_pred_lm_ae[1, "fit"]
+
+for (i in 2:length(diff_pred_arima_ae$mean)) {
+  predictions_arima_ae[i] <- predictions_arima_ae[i-1] + diff_pred_arima_ae$mean[i]
+  predictions_lm_ae[i] <- predictions_lm_ae[i-1] + diff_pred_lm_ae[i, "fit"]
+}
 ```
 
-
-
-```{r}
-results_lm <- data.frame(
-  Date = valid_ae$Date,
-  Actual = valid_ae$Baggage,
-  Predicted = predictions_lm_ae[, "fit"],
-  Lower = predictions_lm_ae[, "lwr"],
-  Upper = predictions_lm_ae[, "upr"]
-)
-
-results_arima <- data.frame(
-  Date = valid_ae$Date,
-  Actual = valid_ae$Baggage,
-  Predicted = predictions_arima_ae$mean,
-  Lower = predictions_arima_ae$lower[, 2],
-  Upper = predictions_arima_ae$upper[, 2]
-)
-
-# Plot the linear model results
-plot_lm <- ggplot(results_lm, aes(x = Date)) +
-  geom_line(aes(y = Actual, color = "Actual")) +
-  geom_line(aes(y = Predicted, color = "Predicted")) +
-  geom_ribbon(aes(ymin = Lower, ymax = Upper), alpha = 0.2) +
-  labs(title = "Linear Model: Baggage Complaints", x = "Date", y = "Baggage Complaints") +
-  theme_minimal() +
-  scale_color_manual(values = c("Actual" = "black", "Predicted" = "red")) +
-  theme(legend.title = element_blank())
-
-# Plot the ARIMA model results
-plot_arima <- ggplot(results_arima, aes(x = Date)) +
-  geom_line(aes(y = Actual, color = "Actual")) +
-  geom_line(aes(y = Predicted, color = "Predicted")) +
-  geom_ribbon(aes(ymin = Lower, ymax = Upper), alpha = 0.2) +
-  labs(title = "ARIMA Model: Baggage Complaints", x = "Date", y = "Baggage Complaints") +
-  theme_minimal() +
-  scale_color_manual(values = c("Actual" = "black", "Predicted" = "blue")) +
-  theme(legend.title = element_blank())
-
-# Display the plots
-print(plot_lm)
-print(plot_arima)
-```
 
 
 ```{r}
@@ -362,14 +358,16 @@ print(plot_arima)
 library(Metrics)
 
 # Evaluate ARIMA Model
-mae_arima <- mae(valid_ae$Baggage, predictions_arima_ae$mean)
-mse_arima <- mse(valid_ae$Baggage, predictions_arima_ae$mean)
+mae_arima <- mae(valid_ae$Baggage, predictions_arima_ae)
+mse_arima <- mse(valid_ae$Baggage, predictions_arima_ae)
 rmse_arima <- sqrt(mse_arima)  # Calculating RMSE
+mape_arima <- mean(abs((predictions_arima_ae - valid_ae$Baggage) / valid_ae$Baggage)) * 100
 
 # Evaluate Linear Model
 mae_lm <- mae(valid_ae$Baggage, predictions_lm_ae)
 mse_lm <- mse(valid_ae$Baggage, predictions_lm_ae)
 rmse_lm <- sqrt(mse_lm)  # Calculating RMSE
+mape_lm <- mean(abs((predictions_lm_ae - valid_ae$Baggage) / valid_ae$Baggage)) * 100
 
 # Print the results
 # Assuming you've calculated MAE, MSE, and RMSE as shown before
@@ -377,7 +375,8 @@ evaluation_table <- data.frame(
   Model = c("ARIMA", "Linear Regression"),
   MAE = c(mae_arima, mae_lm),
   MSE = c(mse_arima, mse_lm),
-  RMSE = c(rmse_arima, rmse_lm)
+  RMSE = c(rmse_arima, rmse_lm),
+  MAPE = c(mape_arima,mape_lm)
 )
 
 library(knitr)
@@ -389,8 +388,24 @@ kable(evaluation_table, caption = "Performance Evaluation of Models", align = 'c
 xreg_valid_haw <- cbind(valid_haw$Scheduled, valid_haw$Cancelled, valid_haw$Enplaned)
 
 # Predict using the models
-predictions_arima_haw <- forecast(dyn_haw, xreg = xreg_valid_haw)
-predictions_lm_haw <- predict(lm_haw, newdata = valid_haw)
+diff_pred_arima_haw <- forecast(dyn_haw, xreg = xreg_valid_haw)
+diff_pred_lm_haw <- predict(lm_haw, newdata = valid_haw, interval = "confidence")
+
+# Initialize vectors for cumulative predictions
+predictions_arima_haw <- numeric(length(diff_pred_arima_haw$mean))
+predictions_lm_haw <- numeric(length(diff_pred_lm_haw[, "fit"]))
+
+# The last observed value in the training set
+last_train_value <- tail(train_haw$Baggage, 1)
+
+# Compute the cumulative predictions
+predictions_arima_haw[1] <- last_train_value + diff_pred_arima_haw$mean[1]
+predictions_lm_haw[1] <- last_train_value + diff_pred_lm_haw[1, "fit"]
+
+for (i in 2:length(diff_pred_arima_haw$mean)) {
+  predictions_arima_haw[i] <- predictions_arima_haw[i-1] + diff_pred_arima_haw$mean[i]
+  predictions_lm_haw[i] <- predictions_lm_haw[i-1] + diff_pred_lm_haw[i, "fit"]
+}
 ```
 
 ```{r}
@@ -398,14 +413,16 @@ predictions_lm_haw <- predict(lm_haw, newdata = valid_haw)
 library(Metrics)
 
 # Evaluate ARIMA Model
-mae_arima <- mae(valid_haw$Baggage, predictions_arima_haw$mean)
-mse_arima <- mse(valid_haw$Baggage, predictions_arima_haw$mean)
-rmse_arima <- sqrt(mse_arima)  # Calculating RMSE
+mae_arima <- mae(valid_haw$Baggage, predictions_arima_haw)
+mse_arima <- mse(valid_haw$Baggage, predictions_arima_haw)
+rmse_arima <- sqrt(mse_arima)
+mape_arima <- mean(abs((predictions_arima_haw - valid_haw$Baggage) / valid_haw$Baggage)) * 100
 
 # Evaluate Linear Model
 mae_lm <- mae(valid_haw$Baggage, predictions_lm_haw)
 mse_lm <- mse(valid_haw$Baggage, predictions_lm_haw)
 rmse_lm <- sqrt(mse_lm)  # Calculating RMSE
+mape_lm <- mean(abs((predictions_lm_haw - valid_haw$Baggage) / valid_haw$Baggage)) * 100
 
 # Print the results
 # Assuming you've calculated MAE, MSE, and RMSE as shown before
@@ -413,7 +430,8 @@ evaluation_table <- data.frame(
   Model = c("ARIMA", "Linear Regression"),
   MAE = c(mae_arima, mae_lm),
   MSE = c(mse_arima, mse_lm),
-  RMSE = c(rmse_arima, rmse_lm)
+  RMSE = c(rmse_arima, rmse_lm),
+  MAPE = c(mape_arima,mape_lm)
 )
 
 library(knitr)
@@ -426,30 +444,50 @@ kable(evaluation_table, caption = "Performance Evaluation of Models", align = 'c
 xreg_valid_uni <- cbind(valid_uni$Scheduled, valid_uni$Cancelled, valid_uni$Enplaned)
 
 # Predict using the models
-predictions_arima_uni <- forecast(dyn_uni, xreg = xreg_valid_uni)
-predictions_lm_uni <- predict(lm_uni, newdata = valid_uni)
+diff_pred_arima_uni <- forecast(dyn_uni, xreg = xreg_valid_uni)
+diff_pred_lm_uni <- predict(lm_uni, newdata = valid_uni, interval = "confidence")
+
+# Initialize vectors for cumulative predictions
+predictions_arima_uni <- numeric(length(diff_pred_arima_uni$mean))
+predictions_lm_uni <- numeric(length(diff_pred_lm_uni[, "fit"]))
+
+# The last observed value in the training set
+last_train_value <- tail(train_uni$Baggage, 1)
+
+# Compute the cumulative predictions
+predictions_arima_uni[1] <- last_train_value + diff_pred_arima_uni$mean[1]
+predictions_lm_uni[1] <- last_train_value + diff_pred_lm_uni[1, "fit"]
+
+for (i in 2:length(diff_pred_arima_uni$mean)) {
+  predictions_arima_uni[i] <- predictions_arima_uni[i-1] + diff_pred_arima_uni$mean[i]
+  predictions_lm_uni[i] <- predictions_lm_uni[i-1] + diff_pred_lm_uni[i, "fit"]
+}
 ```
+
 
 ```{r}
 
 library(Metrics)
 
 # Evaluate ARIMA Model
-mae_arima <- mae(valid_uni$Baggage, predictions_arima_uni$mean)
-mse_arima <- mse(valid_uni$Baggage, predictions_arima_uni$mean)
-rmse_arima <- sqrt(mse_arima)  # Calculating RMSE
+mae_arima <- mae(valid_uni$Baggage, predictions_arima_uni)
+mse_arima <- mse(valid_uni$Baggage, predictions_arima_uni)
+rmse_arima <- sqrt(mse_arima) 
+mape_arima <- mean(abs((predictions_arima_uni - valid_uni$Baggage) / valid_uni$Baggage)) * 100
 
 # Evaluate Linear Model
 mae_lm <- mae(valid_uni$Baggage, predictions_lm_uni)
 mse_lm <- mse(valid_uni$Baggage, predictions_lm_uni)
 rmse_lm <- sqrt(mse_lm)  # Calculating RMSE
+mape_lm <- mean(abs((predictions_lm_uni - valid_uni$Baggage) / valid_uni$Baggage)) * 100
 
 # Print the results
 evaluation_table <- data.frame(
   Model = c("ARIMA", "Linear Regression"),
   MAE = c(mae_arima, mae_lm),
   MSE = c(mse_arima, mse_lm),
-  RMSE = c(rmse_arima, rmse_lm)
+  RMSE = c(rmse_arima, rmse_lm),
+  MAPE = c(mape_arima,mape_lm)
 )
 
 library(knitr)
