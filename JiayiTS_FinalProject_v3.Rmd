@@ -1,0 +1,378 @@
+---
+title: "TS_finalproject"
+output: html_document
+date: "2024-05-14"
+---
+
+# Data Importing
+```{r}
+data <- read.csv('baggagecomplaints.csv')
+data$bag_rate <- data$Baggage / data$Enplaned
+data$cancel_rate <- data$Cancelled / data$Scheduled
+data$Date <- as.Date(paste(data$Year, data$Month, "01", sep = "-"))
+```
+
+```{r}
+airlines <- unique(data$Airline)
+airline_data_frames <- list()
+for (airline in airlines) {
+  airline_data_frames[[airline]] <- subset(data, Airline == airline)
+}
+```
+
+```{r}
+ae <- airline_data_frames[['American Eagle']]
+haw <- airline_data_frames[['Hawaiian']]
+uni <- airline_data_frames[['United']]
+```
+
+
+## American Eagle
+```{r}
+ae <- ae[, c("Date","Scheduled", "Cancelled", "Enplaned","cancel_rate",
+             "bag_rate", "Baggage")]
+
+corr_ae <- cor(ae[, c("Scheduled", "Cancelled", "Enplaned","cancel_rate",
+             "bag_rate", "Baggage")], use = "complete.obs")
+print(corr_ae)
+```
+```{r}
+# Function to calculate differences in all relevant columns
+difference_time_series <- function(df) {
+  df$Scheduled_diff <- c(NA, diff(df$Scheduled))
+  df$Cancelled_diff <- c(NA, diff(df$Cancelled))
+  df$Enplaned_diff <- c(NA, diff(df$Enplaned))
+  df$cancel_rate_diff <- c(NA, diff(df$cancel_rate))
+  df$bag_rate_diff <- c(NA, diff(df$bag_rate))
+  df$Baggage_diff <- c(NA, diff(df$Baggage))
+  return(df)
+}
+
+# Applying the function to each airline data frame
+ae_diff <- difference_time_series(ae)
+ae_diff <- ae_diff[, c("Date","Scheduled_diff", "Cancelled_diff", "Enplaned_diff","cancel_rate_diff", "bag_rate_diff", "Baggage_diff")]
+ae_diff <- na.omit(ae_diff)
+
+# If you want to see the structure of the transformed data for American Eagle
+print(ae_diff)
+```
+
+
+```{r}
+library(ggplot2)
+library(reshape2)
+plot_scheduled <- ggplot(ae_diff, aes(x = Date, y = Scheduled_diff)) +
+  geom_line(color = "blue") +
+  labs(title = "Scheduled Flights Over Time", x = "Date", y = "Scheduled Flights") +
+  theme_minimal()
+
+# Plot Cancelled
+plot_cancelled <- ggplot(ae_diff, aes(x = Date, y = Cancelled_diff)) +
+  geom_line(color = "red") +
+  labs(title = "Cancelled Flights Over Time", x = "Date", y = "Cancelled Flights") +
+  theme_minimal()
+
+# Plot Enplaned
+plot_enplaned <- ggplot(ae_diff, aes(x = Date, y = Enplaned_diff)) +
+  geom_line(color = "green") +
+  labs(title = "Enplaned Passengers Over Time", x = "Date", y = "Enplaned Passengers") +
+  theme_minimal()
+
+# Plot Baggage_Per_Enplaned
+plot_baggage_per_enplaned <- ggplot(ae_diff, aes(x = Date, y = bag_rate_diff)) +
+  geom_line(color = "purple") +
+  labs(title = "Baggage Per Enplaned Passenger Over Time", x = "Date", y = "Baggage Per Enplaned Passenger") +
+  theme_minimal()
+
+# Plot Cancelled_Per_Scheduled
+plot_cancelled_per_scheduled <- ggplot(ae_diff, aes(x = Date, y = cancel_rate_diff)) +
+  geom_line(color = "orange") +
+  labs(title = "Cancelled Per Scheduled Flight Over Time", x = "Date", y = "Cancelled Per Scheduled Flight") +
+  theme_minimal()
+
+# Plot Baggage
+plot_Baggage <- ggplot(ae_diff, aes(x = Date, y = Baggage_diff)) +
+  geom_line(color = "orange") +
+  labs(title = "Baggage Over Time", x = "Date", y = "Baggage") +
+  theme_minimal()
+
+# Display the plots
+print(plot_scheduled)
+print(plot_cancelled)
+print(plot_enplaned)
+print(plot_baggage_per_enplaned)
+print(plot_cancelled_per_scheduled)
+print(plot_Baggage)
+```
+```{r}
+acf_scheduled <- acf(ae_diff$Scheduled_diff, main = "ACF of Scheduled Flights")
+acf_cancelled <- acf(ae_diff$Cancelled_diff, main = "ACF of Cancelled Flights")
+acf_enplaned <- acf(ae_diff$Enplaned_diff, main = "ACF of Enplaned Passengers")
+acf_baggage_per_enplaned <- acf(ae_diff$bag_rate_diff, main = "ACF of Baggage Per Enplaned Passenger")
+acf_cancelled_per_scheduled <- acf(ae_diff$cancel_rate_diff, main = "ACF of Cancelled Per Scheduled Flight")
+acf_baggage <- acf(ae_diff$Baggage_diff, main = "ACF of Baggage")
+```
+```{r}
+library(tseries)
+
+kpss_baggage_per_enplaned <- kpss.test(ae_diff$bag_rate_diff)
+adf_baggage_per_enplaned <- adf.test(ae_diff$bag_rate_diff)
+
+print(kpss_baggage_per_enplaned)
+print(adf_baggage_per_enplaned)
+```
+
+```{r}
+library(tseries)
+
+kpss_baggage <- kpss.test(ae_diff$Baggage_diff)
+adf_baggage <- adf.test(ae_diff$Baggage_diff)
+
+print(kpss_baggage)
+print(adf_baggage)
+```
+
+```{r}
+library(TSA)
+ae_bag_ts <- xts(ae_diff$bag_rate_diff, order.by = ae_diff$Date)
+p <- periodogram(ae_bag_ts)
+p
+```
+```{r}
+max_freq <- p$freq[which.max(p$spec)]
+seasonality <- 1 / max_freq
+seasonality
+```
+
+## Hawaiian
+```{r}
+haw <- haw[, c("Date","Scheduled", "Cancelled", "Enplaned","cancel_rate",
+             "bag_rate", "Baggage")]
+
+corr_haw <- cor(haw[, c("Scheduled", "Cancelled", "Enplaned","cancel_rate",
+             "bag_rate", "Baggage")], use = "complete.obs")
+print(corr_haw)
+```
+
+```{r}
+# Applying the function to each airline data frame
+haw_diff <- difference_time_series(haw)
+haw_diff <- haw_diff[, c("Date","Scheduled_diff", "Cancelled_diff", "Enplaned_diff","cancel_rate_diff", "bag_rate_diff", "Baggage_diff")]
+haw_diff <- na.omit(haw_diff)
+
+# If you want to see the structure of the transformed data for American Eagle
+print(haw_diff)
+```
+
+```{r}
+library(ggplot2)
+library(reshape2)
+plot_scheduled <- ggplot(haw_diff, aes(x = Date, y = Scheduled_diff)) +
+  geom_line(color = "blue") +
+  labs(title = "Scheduled Flights Over Time", x = "Date", y = "Scheduled Flights") +
+  theme_minimal()
+
+# Plot Cancelled
+plot_cancelled <- ggplot(haw_diff, aes(x = Date, y = Cancelled_diff)) +
+  geom_line(color = "red") +
+  labs(title = "Cancelled Flights Over Time", x = "Date", y = "Cancelled Flights") +
+  theme_minimal()
+
+# Plot Enplaned
+plot_enplaned <- ggplot(haw_diff, aes(x = Date, y = Enplaned_diff)) +
+  geom_line(color = "green") +
+  labs(title = "Enplaned Passengers Over Time", x = "Date", y = "Enplaned Passengers") +
+  theme_minimal()
+
+# Plot Baggage_Per_Enplaned
+plot_baggage_per_enplaned <- ggplot(haw_diff, aes(x = Date, y = bag_rate_diff)) +
+  geom_line(color = "purple") +
+  labs(title = "Baggage Per Enplaned Passenger Over Time", x = "Date", y = "Baggage Per Enplaned Passenger") +
+  theme_minimal()
+
+# Plot Cancelled_Per_Scheduled
+plot_cancelled_per_scheduled <- ggplot(haw_diff, aes(x = Date, y = cancel_rate_diff)) +
+  geom_line(color = "orange") +
+  labs(title = "Cancelled Per Scheduled Flight Over Time", x = "Date", y = "Cancelled Per Scheduled Flight") +
+  theme_minimal()
+
+plot_baggage <- ggplot(haw_diff, aes(x = Date, y = Baggage_diff)) +
+  geom_line(color = "orange") +
+  labs(title = "Baggage Over Time", x = "Date", y = "Baggage") +
+  theme_minimal()
+
+# Display the plots
+print(plot_scheduled)
+print(plot_cancelled)
+print(plot_enplaned)
+print(plot_baggage_per_enplaned)
+print(plot_cancelled_per_scheduled)
+print(plot_baggage)
+```
+
+```{r}
+acf_scheduled <- acf(haw_diff$Scheduled_diff, main = "ACF of Scheduled Flights")
+acf_cancelled <- acf(haw_diff$Cancelled_diff, main = "ACF of Cancelled Flights")
+acf_enplaned <- acf(haw_diff$Enplaned_diff, main = "ACF of Enplaned Passengers")
+acf_baggage_per_enplaned <- acf(haw_diff$bag_rate_diff, main = "ACF of Baggage Per Enplaned Passenger")
+acf_cancelled_per_scheduled <- acf(haw_diff$cancel_rate_diff, main = "ACF of Cancelled Per Scheduled Flight")
+acf_baggage <- acf(haw_diff$Baggage_diff, main = "ACF of Baggage")
+```
+
+```{r}
+haw_bag_ts <- xts(haw$Baggage, order.by = haw$Date)
+p <- periodogram(haw_bag_ts)
+p
+```
+
+```{r}
+max_freq <- p$freq[which.max(p$spec)]
+seasonality <- 1 / max_freq
+seasonality
+```
+
+```{r}
+library(tseries)
+
+kpss_baggage_per_enplaned <- kpss.test(haw_diff$Baggage_diff)
+adf_baggage_per_enplaned <- adf.test(haw_diff$Baggage_diff)
+
+print(kpss_baggage_per_enplaned)
+print(adf_baggage_per_enplaned)
+```
+
+
+## United
+```{r}
+uni <- uni[, c("Date","Scheduled", "Cancelled", "Enplaned","cancel_rate",
+             "bag_rate", "Baggage")]
+
+corr_uni <- cor(uni[, c("Scheduled", "Cancelled", "Enplaned","cancel_rate",
+             "bag_rate", "Baggage")], use = "complete.obs")
+print(corr_uni)
+```
+
+```{r}
+# Applying the function to each airline data frame
+uni_diff <- difference_time_series(uni)
+uni_diff <- uni_diff[, c("Date","Scheduled_diff", "Cancelled_diff", "Enplaned_diff","cancel_rate_diff", "bag_rate_diff", "Baggage_diff")]
+uni_diff <- na.omit(uni_diff)
+
+# If you want to see the structure of the transformed data for American Eagle
+print(uni_diff)
+```
+
+```{r}
+plot_scheduled <- ggplot(uni_diff, aes(x = Date, y = Scheduled_diff)) +
+  geom_line(color = "blue") +
+  labs(title = "Scheduled Flights Over Time", x = "Date", y = "Scheduled Flights") +
+  theme_minimal()
+
+# Plot Cancelled
+plot_cancelled <- ggplot(uni_diff, aes(x = Date, y = Cancelled_diff)) +
+  geom_line(color = "red") +
+  labs(title = "Cancelled Flights Over Time", x = "Date", y = "Cancelled Flights") +
+  theme_minimal()
+
+# Plot Enplaned
+plot_enplaned <- ggplot(uni_diff, aes(x = Date, y = Enplaned_diff)) +
+  geom_line(color = "green") +
+  labs(title = "Enplaned Passengers Over Time", x = "Date", y = "Enplaned Passengers") +
+  theme_minimal()
+
+# Plot Baggage_Per_Enplaned
+plot_baggage_per_enplaned <- ggplot(uni_diff, aes(x = Date, y = bag_rate_diff)) +
+  geom_line(color = "purple") +
+  labs(title = "Baggage Per Enplaned Passenger Over Time", x = "Date", y = "Baggage Per Enplaned Passenger") +
+  theme_minimal()
+
+# Plot Cancelled_Per_Scheduled
+plot_cancelled_per_scheduled <- ggplot(uni_diff, aes(x = Date, y = cancel_rate_diff)) +
+  geom_line(color = "orange") +
+  labs(title = "Cancelled Per Scheduled Flight Over Time", x = "Date", y = "Cancelled Per Scheduled Flight") +
+  theme_minimal()
+
+plot_Baggage <- ggplot(uni_diff, aes(x = Date, y = Baggage_diff)) +
+  geom_line(color = "orange") +
+  labs(title = "Baggage Over Time", x = "Date", y = "Baggage") +
+  theme_minimal()
+
+# Display the plots
+print(plot_scheduled)
+print(plot_cancelled)
+print(plot_enplaned)
+print(plot_baggage_per_enplaned)
+print(plot_cancelled_per_scheduled)
+print(plot_Baggage)
+```
+
+```{r}
+acf_scheduled <- acf(uni_diff$Scheduled_diff, main = "ACF of Scheduled Flights")
+acf_cancelled <- acf(uni_diff$Cancelled_diff, main = "ACF of Cancelled Flights")
+acf_enplaned <- acf(uni_diff$Enplaned_diff, main = "ACF of Enplaned Passengers")
+acf_baggage_per_enplaned <- acf(uni_diff$bag_rate_diff, main = "ACF of Baggage Per Enplaned Passenger")
+acf_cancelled_per_scheduled <- acf(uni_diff$cancel_rate_diff, main = "ACF of Cancelled Per Scheduled Flight")
+acf_baggage <- acf(uni_diff$Baggage_diff, main = "ACF of Baggage")
+```
+```{r}
+library(tseries)
+
+kpss_baggage_per_enplaned <- kpss.test(uni_diff$cancel_rate_diff)
+adf_baggage_per_enplaned <- adf.test(uni_diff$cancel_rate_diff)
+
+print(kpss_baggage_per_enplaned)
+print(adf_baggage_per_enplaned)
+```
+
+Original dataset contains stochastic trend, which can be removed only by differencing. KPSS test with trend and ADF test can only determine diterministic trend stationarity.
+
+```{r}
+# Original dataset
+library(tseries)
+
+kpss_baggage_per_enplaned <- kpss.test(uni$Baggage, null="Trend")
+adf_baggage_per_enplaned <- adf.test(uni$Baggage)
+
+print(kpss_baggage_per_enplaned)
+print(adf_baggage_per_enplaned)
+```
+
+```{r}
+uni_bag_ts <- xts(uni_diff$bag_rate_diff, order.by = uni_diff$Date)
+p <- periodogram(uni_bag_ts)
+p
+```
+
+
+```{r}
+max_freq <- p$freq[which.max(p$spec)]
+seasonality <- 1 / max_freq
+seasonality
+```
+
+
+## Homoscedasticity
+
+```{r}
+library(TSA)
+library(forecast)
+
+model1 <- auto.arima(uni$Baggage, seasonal = TRUE)
+model_resid <- model1$residuals
+
+McLeod.Li.test(y=model_resid)
+```
+## Outlier Analysis
+
+No outlier detected for all features.
+
+```{r}
+tsoutliers(uni$Baggage)
+
+# cleaned_baggage <- tsclean()
+```
+
+
+
+
+
